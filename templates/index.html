@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JGP Data Lookup</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            margin-top: 50px;
+        }
+        .card {
+            border-radius: 15px;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #006747; /* KNCCI green */
+        }
+        .btn-primary {
+            background-color: #006747; /* KNCCI green */
+        }
+        .results-table th {
+            background-color: #000000; /* KNCCI black */
+            color: #fff;
+        }
+        .logos {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .logos img {
+            height: 60px;
+            margin: 0 10px;
+        }
+        .red-text {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Updated Logos Section -->
+        <div class="logos">
+            <img src="https://www.kenyachamber.or.ke/wp-content/uploads/header-kncci-logo.png" alt="KNCCI Logo">
+            <img src="https://dpogroup.com/wp-content/uploads/2021/07/Asset-1@4x.png" alt="Mastercard Logo">
+        </div>
+        <div class="text-center mb-4">
+            <h1 class="display-5 red-text">JGP Data Lookup</h1>
+            <p class="text-muted">Easily search and view participant information.</p>
+        </div>
+
+        <!-- Search Form -->
+        <div class="card shadow mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Search Criteria</h5>
+                <form id="searchForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="county" class="form-label">County</label>
+                            <select id="county" class="form-select" required>
+                                <option value="">Choose a county...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="idNumber" class="form-label">ID Number</label>
+                            <input type="text" id="idNumber" class="form-control" placeholder="Enter ID number">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="phoneNumber" class="form-label">Phone Number</label>
+                            <input type="text" id="phoneNumber" class="form-control" placeholder="Enter phone number">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="fullName" class="form-label">Full Name</label>
+                            <input type="text" id="fullName" class="form-control" placeholder="Enter full name">
+                        </div>
+                    </div>
+                    <div class="text-end mt-4">
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card shadow">
+            <div class="card-body">
+                <h5 class="card-title">Search Results</h5>
+                <div id="loading" class="text-center d-none">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading records...</p>
+                </div>
+                <div id="results">
+                    <p class="text-muted text-center">No results to display. Start by performing a search.</p>
+                </div>
+                <div id="pagination" class="d-flex justify-content-between mt-3 d-none">
+                    <button id="prevPage" class="btn btn-outline-primary" disabled>Back</button>
+                    <button id="nextPage" class="btn btn-outline-primary">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JavaScript for Search Logic -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const countySelect = document.getElementById("county");
+            const searchForm = document.getElementById("searchForm");
+            const resultsDiv = document.getElementById("results");
+            const loadingDiv = document.getElementById("loading");
+            const paginationDiv = document.getElementById("pagination");
+            const prevPageBtn = document.getElementById("prevPage");
+            const nextPageBtn = document.getElementById("nextPage");
+
+            let currentPage = 1;
+            const resultsPerPage = 10;
+            let searchResults = [];
+
+            // Populate counties dynamically
+            fetch("/api/data")
+                .then((response) => response.json())
+                .then((counties) => {
+                    counties.forEach((county) => {
+                        const option = document.createElement("option");
+                        option.value = county;
+                        option.textContent = county;
+                        countySelect.appendChild(option);
+                    });
+                })
+                .catch((error) => console.error("Error fetching counties:", error));
+
+            // Handle form submission
+            searchForm.addEventListener("submit", (e) => {
+                e.preventDefault();
+                const county = countySelect.value;
+                const idNumber = document.getElementById("idNumber").value.trim();
+                const phoneNumber = document.getElementById("phoneNumber").value.trim();
+                const fullName = document.getElementById("fullName").value.trim();
+
+                loadingDiv.classList.remove("d-none");
+                resultsDiv.innerHTML = "";
+                paginationDiv.classList.add("d-none");
+
+                fetch("/api/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ county, idNumber, phoneNumber, fullName })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loadingDiv.classList.add("d-none");
+                    if (data.length === 0) {
+                        resultsDiv.innerHTML = `<p class="text-center text-danger">No matching records found.</p>`;
+                    } else {
+                        searchResults = data;
+                        currentPage = 1;
+                        displayResults();
+                    }
+                })
+                .catch(error => {
+                    loadingDiv.classList.add("d-none");
+                    resultsDiv.innerHTML = `<p class="text-center text-danger">An error occurred: ${error.message}</p>`;
+                });
+            });
+
+            function displayResults() {
+                const startIndex = (currentPage - 1) * resultsPerPage;
+                const endIndex = startIndex + resultsPerPage;
+                const paginatedResults = searchResults.slice(startIndex, endIndex);
+
+                let tableHTML = `
+                    <table class="table table-striped results-table">
+                        <thead>
+                            <tr>
+                                <th>County</th>
+                                <th>Full Name</th>
+                                <th>ID Number</th>
+                                <th>Phone Number</th>
+                                <th>Email</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                paginatedResults.forEach(row => {
+                    tableHTML += `
+                        <tr>
+                            <td>${row.County || ""}</td>
+                            <td>${row["Full Name"] || ""}</td>
+                            <td>${row["WHAT IS YOUR NATIONAL ID?"] || ""}</td>
+                            <td>${row["Phone Number"] || ""}</td>
+                            <td>${row["Email Address"] || ""}</td>
+                        </tr>
+                    `;
+                });
+                tableHTML += "</tbody></table>";
+                resultsDiv.innerHTML = tableHTML;
+
+                paginationDiv.classList.remove("d-none");
+                prevPageBtn.disabled = currentPage === 1;
+                nextPageBtn.disabled = endIndex >= searchResults.length;
+            }
+
+            prevPageBtn.addEventListener("click", () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    displayResults();
+                }
+            });
+
+            nextPageBtn.addEventListener("click", () => {
+                if ((currentPage * resultsPerPage) < searchResults.length) {
+                    currentPage++;
+                    displayResults();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
